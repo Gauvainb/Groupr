@@ -60,6 +60,18 @@ src/
     AddEquipmentScreen.tsx # Add firearm form
 ```
 
+## Web preview
+
+A browser-based UI for testing the app without a device or simulator lives in `web-preview/`.
+
+```bash
+cd web-preview
+npm install
+npm run dev
+```
+
+The dev server binds to `0.0.0.0:5173`. Open the **Network** URL shown in the terminal (e.g. `http://<your-machine-ip>:5173`) — not the `localhost` one, which only works when your browser runs on the same machine as the server.
+
 ## MOA calculation
 
 `MOA = sizeMm / (distanceMeters × 0.02908)`
