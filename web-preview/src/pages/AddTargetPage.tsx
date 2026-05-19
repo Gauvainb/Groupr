@@ -15,11 +15,51 @@ const label: React.CSSProperties = {
   display: 'block', marginBottom: 5, marginTop: 16,
 };
 
-const PRESETS = [
-  { label: 'A4 (210×297)', w: 210, h: 297 },
-  { label: 'Letter (216×279)', w: 216, h: 279 },
-  { label: '30×30 cm', w: 300, h: 300 },
-  { label: '50×50 cm', w: 500, h: 500 },
+interface Preset { label: string; desc: string; w: number; h: number }
+const PRESET_GROUPS: { group: string; items: Preset[] }[] = [
+  {
+    group: '10 m',
+    items: [
+      { label: 'ISSF 10m Air Rifle',       desc: 'Carabine air 10m (ISSF)',        w: 170, h: 170 },
+      { label: 'ISSF 10m Air Pistol',       desc: 'Pistolet air 10m (ISSF)',        w: 170, h: 170 },
+    ],
+  },
+  {
+    group: '25 m',
+    items: [
+      { label: 'ISSF 25m Pistol Precision', desc: 'Pistolet CF précision (ISSF)',   w: 170, h: 170 },
+      { label: 'ISSF 25m Rapid-Fire',       desc: '5 silhouettes côte-à-côte',      w: 550, h: 550 },
+    ],
+  },
+  {
+    group: '50 m',
+    items: [
+      { label: 'ISSF 50m Rifle',            desc: 'Couché / 3 positions (ISSF)',    w: 550, h: 550 },
+      { label: 'C50 — FFTir',               desc: '.22 LR 50m compétition France',  w: 510, h: 520 },
+      { label: 'KK50 — DSB',               desc: '.22 LR 50m Kleinkaliber (feuille)', w: 340, h: 340 },
+    ],
+  },
+  {
+    group: '300 m',
+    items: [
+      { label: 'ISSF 300m Free Rifle',      desc: 'Carabine libre 300m (ISSF)',     w: 1020, h: 1020 },
+    ],
+  },
+  {
+    group: 'Pratique / IPSC',
+    items: [
+      { label: 'IPSC Classic',              desc: 'Carton classique (~18×23 in)',   w: 460, h: 580 },
+      { label: 'IPSC Metric / USPSA',       desc: 'Carton métrique standard',       w: 460, h: 760 },
+    ],
+  },
+  {
+    group: 'Autres',
+    items: [
+      { label: 'NRA B-8 (25 yd)',           desc: 'Pistolet bullseye US 25 verges', w: 533, h: 610 },
+      { label: 'Biathlon (panneau 5 disques)', desc: 'Panel IBU : couché 45 mm / debout 115 mm', w: 1200, h: 320 },
+      { label: '.22 Hunter',                desc: 'Entraînement chasse / loisir',   w: 216, h: 279 },
+    ],
+  },
 ];
 
 async function resizeImage(file: File, maxDim = 1200): Promise<string> {
@@ -89,21 +129,38 @@ export default function AddTargetPage() {
         <input type="number" value={heightMm} onChange={e => setHeightMm(e.target.value)}
           style={field} placeholder="297" />
 
-        <span style={label}>Quick presets</span>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {PRESETS.map(p => (
-            <button key={p.label}
-              onClick={() => { setWidthMm(String(p.w)); setHeightMm(String(p.h)); }}
-              style={{
-                padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                cursor: 'pointer',
-                border: `1px solid ${widthMm === String(p.w) && heightMm === String(p.h) ? C.primary : C.border}`,
-                background: widthMm === String(p.w) && heightMm === String(p.h) ? C.primary : C.card,
-                color: widthMm === String(p.w) && heightMm === String(p.h) ? C.bg : C.text,
-              }}
-            >{p.label}</button>
-          ))}
-        </div>
+        <span style={label}>Standard targets</span>
+        {PRESET_GROUPS.map(({ group, items }) => (
+          <div key={group} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase',
+              letterSpacing: 1, marginBottom: 4 }}>{group}</div>
+            {items.map(p => {
+              const active = widthMm === String(p.w) && heightMm === String(p.h);
+              return (
+                <button key={p.label}
+                  onClick={() => { setWidthMm(String(p.w)); setHeightMm(String(p.h)); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', padding: '10px 14px', marginBottom: 4, borderRadius: 8,
+                    cursor: 'pointer', textAlign: 'left',
+                    background: active ? C.primary : C.card,
+                    border: `1px solid ${active ? C.primary : C.border}`,
+                    color: active ? C.bg : C.text,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{p.label}</div>
+                    <div style={{ fontSize: 11, color: active ? C.bg : C.muted, marginTop: 1 }}>{p.desc}</div>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: active ? C.bg : C.secondary,
+                    flexShrink: 0, marginLeft: 12 }}>
+                    {p.w}×{p.h} mm
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))}
 
         <span style={label}>Label (optional)</span>
         <input type="text" value={targetLabel} onChange={e => setTargetLabel(e.target.value)}
