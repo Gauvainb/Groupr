@@ -42,3 +42,19 @@ export interface Group {
   shotCount: number;
   label?: string;
 }
+
+export interface Impact {
+  x: number;
+  y: number;
+}
+
+export interface TargetImage {
+  id: number;
+  sessionId: number;
+  imageData: string;
+  widthMm: number;
+  heightMm: number;
+  impacts: Impact[];
+  label?: string;
+  createdAt: string;
+}

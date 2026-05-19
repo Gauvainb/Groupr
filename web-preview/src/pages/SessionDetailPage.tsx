@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { SessionStore, EquipmentStore, GroupStore } from '../db/store';
-import { Session, Equipment, Group } from '../types';
+import { SessionStore, EquipmentStore, GroupStore, TargetStore } from '../db/store';
+import { Session, Equipment, Group, TargetImage, Impact } from '../types';
 import { C, card } from '../theme';
 
 function toMoa(sizeMm: number, distM: number) {
@@ -10,6 +10,16 @@ function toMoa(sizeMm: number, distM: number) {
 }
 function toMeters(d: number, unit: string) {
   return unit === 'yd' ? d * 0.9144 : d;
+}
+function calcGroup(impacts: Impact[], wMm: number, hMm: number): number {
+  let max = 0;
+  for (let i = 0; i < impacts.length; i++)
+    for (let j = i + 1; j < impacts.length; j++) {
+      const dx = (impacts[i].x - impacts[j].x) * wMm;
+      const dy = (impacts[i].y - impacts[j].y) * hMm;
+      max = Math.max(max, Math.sqrt(dx * dx + dy * dy));
+    }
+  return max;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -45,10 +55,12 @@ const inputStyle: React.CSSProperties = {
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const sessionId = Number(id);
   const [session, setSession] = useState<Session | undefined>();
   const [equipment, setEquipment] = useState<Equipment | undefined>();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [targets, setTargets] = useState<TargetImage[]>([]);
   const [sizeMm, setSizeMm] = useState('');
   const [shotCount, setShotCount] = useState('5');
   const [groupLabel, setGroupLabel] = useState('');
@@ -57,6 +69,7 @@ export default function SessionDetailPage() {
     const s = SessionStore.getById(sessionId);
     setSession(s);
     setGroups(GroupStore.getBySession(sessionId));
+    setTargets(TargetStore.getBySession(sessionId));
     if (s?.equipmentId) setEquipment(EquipmentStore.getAll().find(e => e.id === s.equipmentId));
   };
 
@@ -73,6 +86,10 @@ export default function SessionDetailPage() {
 
   const handleDeleteGroup = (g: Group) => {
     if (confirm(`Remove group ${g.sizeMm.toFixed(1)} mm?`)) { GroupStore.remove(g.id); reload(); }
+  };
+
+  const handleDeleteTarget = (t: TargetImage) => {
+    if (confirm('Delete this target photo and all pinned impacts?')) { TargetStore.remove(t.id); reload(); }
   };
 
   if (!session) return <Layout><div style={{ padding: 16, color: C.muted }}>Session not found.</div></Layout>;
@@ -110,6 +127,47 @@ export default function SessionDetailPage() {
             </div>
           </>
         )}
+
+        {/* Target Photos */}
+        <div style={sectionTitle}>Target Photos</div>
+        {targets.length === 0 && (
+          <div style={{ fontSize: 13, color: C.muted, marginBottom: 8 }}>
+            Upload a photo of your target to pin bullet holes and get automatic group &amp; MOA calculation.
+          </div>
+        )}
+        {targets.map(t => {
+          const gMm = t.impacts.length >= 2 ? calcGroup(t.impacts, t.widthMm, t.heightMm) : null;
+          return (
+            <div key={t.id} onClick={() => navigate(`/sessions/${sessionId}/target/${t.id}`)} style={{
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
+              marginBottom: 8, display: 'flex', gap: 12, padding: 10,
+              cursor: 'pointer', alignItems: 'center',
+            }}>
+              <img src={t.imageData} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {t.label && <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>{t.label}</div>}
+                <div style={{ fontSize: 13, color: C.text }}>{t.impacts.length} impact{t.impacts.length !== 1 ? 's' : ''} pinned</div>
+                {gMm !== null && (
+                  <div style={{ fontSize: 18, fontWeight: 700, color: C.success }}>
+                    {gMm.toFixed(1)} mm
+                    <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{toMoa(gMm, distM)} MOA</span>
+                  </div>
+                )}
+                {t.impacts.length < 2 && (
+                  <div style={{ fontSize: 12, color: C.muted, fontStyle: 'italic' }}>Tap to pin impacts</div>
+                )}
+              </div>
+              <button onClick={e => { e.stopPropagation(); handleDeleteTarget(t); }} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: C.danger, fontSize: 16, flexShrink: 0,
+              }}>🗑</button>
+            </div>
+          );
+        })}
+        <button onClick={() => navigate(`/sessions/${sessionId}/target/new`)} style={{
+          width: '100%', padding: 11, borderRadius: 8, marginBottom: 16,
+          background: C.card, border: `1px dashed ${C.border}`,
+          color: C.secondary, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+        }}>+ Add Target Photo</button>
 
         {/* Groups list */}
         <div style={sectionTitle}>Groups</div>

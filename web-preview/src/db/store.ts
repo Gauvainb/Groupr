@@ -1,4 +1,4 @@
-import { Equipment, Session, Group } from '../types';
+import { Equipment, Session, Group, Impact, TargetImage } from '../types';
 
 function read<T>(key: string): T[] {
   try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
@@ -34,6 +34,7 @@ export const SessionStore = {
   remove(id: number) {
     write('sessions', read<Session>('sessions').filter(s => s.id !== id));
     GroupStore.removeBySession(id);
+    write('targets', read<TargetImage>('targets').filter(t => t.sessionId !== id));
   },
 };
 
@@ -48,6 +49,25 @@ export const GroupStore = {
   },
   remove(id: number) { write('groups', read<Group>('groups').filter(g => g.id !== id)); },
   removeBySession(sessionId: number) { write('groups', read<Group>('groups').filter(g => g.sessionId !== sessionId)); },
+};
+
+export const TargetStore = {
+  getBySession(sessionId: number): TargetImage[] {
+    return read<TargetImage>('targets').filter(t => t.sessionId === sessionId);
+  },
+  getById(id: number): TargetImage | undefined {
+    return read<TargetImage>('targets').find(t => t.id === id);
+  },
+  add(t: Omit<TargetImage, 'id' | 'createdAt'>): TargetImage {
+    const all = read<TargetImage>('targets');
+    const item: TargetImage = { ...t, id: nextId(all), createdAt: new Date().toISOString() };
+    write('targets', [...all, item]);
+    return item;
+  },
+  updateImpacts(id: number, impacts: Impact[]) {
+    write('targets', read<TargetImage>('targets').map(t => t.id === id ? { ...t, impacts } : t));
+  },
+  remove(id: number) { write('targets', read<TargetImage>('targets').filter(t => t.id !== id)); },
 };
 
 export function getStats() {
