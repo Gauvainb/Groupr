@@ -25,7 +25,10 @@ export default function Layout({ title, children, action }: Props) {
   const { pathname } = useLocation();
 
   const isTab = TABS.some(t => t.to === pathname);
-  const subTitle = SUB_TITLES[pathname] || (pathname.startsWith('/sessions/') ? 'Session Detail' : null);
+  const subTitle = SUB_TITLES[pathname]
+    || (/\/sessions\/\d+\/target\/new/.test(pathname) ? 'New Target Photo' : null)
+    || (/\/sessions\/\d+\/target\/\d+/.test(pathname) ? 'Pin Impacts' : null)
+    || (pathname.startsWith('/sessions/') ? 'Session Detail' : null);
   const showBack = !isTab;
   const headerTitle = title || subTitle || (TABS.find(t => t.to === pathname)?.label ?? 'Groupr');
 

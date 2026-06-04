@@ -7,6 +7,8 @@ import SessionDetailPage from './pages/SessionDetailPage';
 import AnalysisPage from './pages/AnalysisPage';
 import EquipmentPage from './pages/EquipmentPage';
 import AddEquipmentPage from './pages/AddEquipmentPage';
+import AddTargetPage from './pages/AddTargetPage';
+import TargetPinPage from './pages/TargetPinPage';
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/sessions/new" element={<AddSessionPage />} />
         <Route path="/sessions/:id" element={<SessionDetailPage />} />
+        <Route path="/sessions/:id/target/new" element={<AddTargetPage />} />
+        <Route path="/sessions/:id/target/:targetId" element={<TargetPinPage />} />
         <Route path="/analysis" element={<AnalysisPage />} />
         <Route path="/equipment" element={<EquipmentPage />} />
         <Route path="/equipment/new" element={<AddEquipmentPage />} />
