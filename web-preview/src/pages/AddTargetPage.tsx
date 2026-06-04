@@ -64,53 +64,67 @@ function drawBullseye(
   const R = Math.min(cw, ch) / 2;
   const outerR = R * outerFrac;
   const blackR  = R * blackFrac;
+  const bandW   = outerR / rings;
+  const lw      = Math.max(0.5, R / 400);
 
-  ctx.fillStyle = '#F3F3EB';
+  // Background
+  ctx.fillStyle = '#F5F5EC';
   ctx.fillRect(0, 0, cw, ch);
 
-  // Rings outer → inner (ring i=rings is outermost, i=1 innermost)
+  // Alternating rings, outermost first
   for (let i = rings; i >= 1; i--) {
     const r = outerR * i / rings;
-    const onBlack = r <= blackR * 1.15;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = onBlack
-      ? (i % 2 === 0 ? '#111' : '#1e1e1e')
-      : (i % 2 === 0 ? '#dcdcd4' : '#f0f0e8');
+    const inBlack = r <= blackR + lw;
+    ctx.fillStyle = inBlack
+      ? (i % 2 === 0 ? '#111' : '#1c1c1c')
+      : (i % 2 === 0 ? '#d4d4cc' : '#ebebE3');
     ctx.fill();
-    ctx.strokeStyle = '#99999966';
-    ctx.lineWidth = Math.max(0.5, R / 350);
+    ctx.strokeStyle = inBlack ? '#353535' : '#9999994d';
+    ctx.lineWidth = lw;
     ctx.stroke();
   }
 
-  // Hard black centre for air / pistol targets
-  if (blackFrac > 0.03) {
+  // Solid black inner zone with subtle sub-ring lines inside it
+  if (blackR > R * 0.015) {
     ctx.beginPath();
     ctx.arc(cx, cy, blackR, 0, Math.PI * 2);
-    ctx.fillStyle = '#080808';
+    ctx.fillStyle = '#090909';
     ctx.fill();
+    for (let i = rings; i >= 1; i--) {
+      const r = outerR * i / rings;
+      if (r >= blackR - lw) continue;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    }
   }
 
-  // Tiny centre dot
+  // Centre dot
   ctx.beginPath();
-  ctx.arc(cx, cy, Math.max(2, R * 0.011), 0, Math.PI * 2);
-  ctx.fillStyle = '#666';
+  ctx.arc(cx, cy, Math.max(2, R * 0.007), 0, Math.PI * 2);
+  ctx.fillStyle = blackR > R * 0.02 ? '#777' : '#aaa';
   ctx.fill();
 
-  // Ring score numbers (score 1 = outermost, 10 = innermost)
-  const fs = Math.round(Math.max(9, outerR / 9));
-  ctx.font = `${fs}px system-ui, sans-serif`;
+  // Score numbers: font sized to fit the band, placed at 3 o'clock AND 9 o'clock
+  const fs = Math.max(6, Math.min(bandW * 0.55, 14));
+  ctx.font = `600 ${Math.round(fs)}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
   for (let i = rings; i >= 1; i--) {
     const rOuter = outerR * i / rings;
     const rInner = outerR * (i - 1) / rings;
     const midR   = (rOuter + rInner) / 2;
-    if (midR < outerR * 0.06) continue;
-    const score  = rings - i + 1;
-    const onBlack = midR <= blackR * 1.3;
-    ctx.fillStyle = onBlack ? '#bbb' : '#555';
-    ctx.fillText(String(score), cx + midR * 0.86, cy);
+    if (midR < bandW * 0.65) continue;
+    const score   = rings - i + 1;
+    const onBlack = rOuter <= blackR + bandW * 0.2;
+    ctx.fillStyle = onBlack ? 'rgba(210,210,210,0.92)' : 'rgba(50,50,50,0.78)';
+    ctx.fillText(String(score), cx + midR, cy);   // 3 o'clock
+    ctx.fillText(String(score), cx - midR, cy);   // 9 o'clock
   }
 }
 
@@ -233,9 +247,11 @@ function generatePlaceholder(kind: TgtKind, wMm: number, hMm: number): string {
   switch (kind) {
     case 'air_rifle_10':
     case 'air_pistol_10':
-      drawBullseye(ctx, cw, ch, { outerFrac: 0.91, blackFrac: 0.267 }); break;
+      // Black zone = rings 4-10, outer diam 30.5mm vs scoring outer 45.5mm → ratio 0.670
+      drawBullseye(ctx, cw, ch, { outerFrac: 0.91, blackFrac: 0.61 }); break;
     case 'pistol_25_prec':
-      drawBullseye(ctx, cw, ch, { outerFrac: 0.91, blackFrac: 0.29 }); break;
+      // Similar large black zone to 10m pistol
+      drawBullseye(ctx, cw, ch, { outerFrac: 0.91, blackFrac: 0.56 }); break;
     case 'rapid_fire_25':
       drawRapidFire(ctx, cw, ch); break;
     case 'rifle_50':
@@ -250,9 +266,10 @@ function generatePlaceholder(kind: TgtKind, wMm: number, hMm: number): string {
     case 'biathlon':
       drawBiathlon(ctx, cw, ch); break;
     case 'nra_b8':
-      drawBullseye(ctx, cw, ch, { outerFrac: 0.85, blackFrac: 0.21 }); break;
+      // Black zone ≈ rings 5-10, ~5.5" diam on 10.5" card → ratio ~0.52
+      drawBullseye(ctx, cw, ch, { outerFrac: 0.85, blackFrac: 0.44 }); break;
     case 'hunter22':
-      drawBullseye(ctx, cw, ch, { outerFrac: 0.80, blackFrac: 0.12 }); break;
+      drawBullseye(ctx, cw, ch, { outerFrac: 0.80, blackFrac: 0.10 }); break;
   }
 
   // Watermark
