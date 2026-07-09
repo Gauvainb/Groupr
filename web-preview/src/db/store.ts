@@ -7,8 +7,10 @@ function write<T>(key: string, items: T[]) {
   localStorage.setItem(key, JSON.stringify(items));
   window.dispatchEvent(new CustomEvent('store:update', { detail: key }));
 }
-function nextId(items: { id: number }[]) {
-  return items.length === 0 ? 1 : Math.max(...items.map(i => i.id)) + 1;
+function nextId(items: { id: number }[]): number {
+  if (items.length === 0) return 1;
+  const maxId = Math.max(...items.map(i => i.id));
+  return maxId + 1;
 }
 
 export const EquipmentStore = {

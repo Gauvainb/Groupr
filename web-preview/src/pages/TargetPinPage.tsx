@@ -4,25 +4,7 @@ import Layout from '../components/Layout';
 import { TargetStore, SessionStore, GroupStore } from '../db/store';
 import { Impact } from '../types';
 import { C, card } from '../theme';
-
-function calcGroup(impacts: Impact[], wMm: number, hMm: number): number {
-  let max = 0;
-  for (let i = 0; i < impacts.length; i++)
-    for (let j = i + 1; j < impacts.length; j++) {
-      const dx = (impacts[i].x - impacts[j].x) * wMm;
-      const dy = (impacts[i].y - impacts[j].y) * hMm;
-      max = Math.max(max, Math.sqrt(dx * dx + dy * dy));
-    }
-  return max;
-}
-
-function toMoa(sizeMm: number, distM: number) {
-  return (sizeMm / (distM * 0.02908)).toFixed(2);
-}
-
-function toMeters(d: number, unit: string) {
-  return unit === 'yd' ? d * 0.9144 : d;
-}
+import { calcGroup, toMoa, toMeters, calcMeanRadius, calcCenterOfImpact } from '../utils/calculations';
 
 export default function TargetPinPage() {
   const { id, targetId } = useParams<{ id: string; targetId: string }>();
@@ -70,15 +52,8 @@ export default function TargetPinPage() {
   const distM = toMeters(session.distance, session.distanceUnit);
   const groupMm = impacts.length >= 2 ? calcGroup(impacts, target.widthMm, target.heightMm) : null;
 
-  const cx = impacts.length > 0 ? impacts.reduce((s, i) => s + i.x, 0) / impacts.length : null;
-  const cy = impacts.length > 0 ? impacts.reduce((s, i) => s + i.y, 0) / impacts.length : null;
-  const meanRadius = impacts.length >= 2 && cx !== null && cy !== null
-    ? impacts.reduce((s, imp) => {
-        const dx = (imp.x - cx) * target.widthMm;
-        const dy = (imp.y - cy) * target.heightMm;
-        return s + Math.sqrt(dx * dx + dy * dy);
-      }, 0) / impacts.length
-    : null;
+  const coi = calcCenterOfImpact(impacts);
+  const meanRadius = calcMeanRadius(impacts, target.widthMm, target.heightMm);
 
   return (
     <Layout>
@@ -102,11 +77,11 @@ export default function TargetPinPage() {
         />
 
         {/* Centre of impact */}
-        {cx !== null && cy !== null && impacts.length >= 2 && (
+        {coi !== null && impacts.length >= 2 && (
           <div style={{
             position: 'absolute',
-            left: `${cx * 100}%`,
-            top: `${cy * 100}%`,
+            left: `${coi.x * 100}%`,
+            top: `${coi.y * 100}%`,
             transform: 'translate(-50%, -50%)',
             width: 14, height: 14, borderRadius: 7,
             background: C.primary,

@@ -2,25 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { SessionStore, EquipmentStore, GroupStore, TargetStore } from '../db/store';
-import { Session, Equipment, Group, TargetImage, Impact } from '../types';
+import { Session, Equipment, Group, TargetImage } from '../types';
 import { C, card } from '../theme';
-
-function toMoa(sizeMm: number, distM: number) {
-  return (sizeMm / (distM * 0.02908)).toFixed(2);
-}
-function toMeters(d: number, unit: string) {
-  return unit === 'yd' ? d * 0.9144 : d;
-}
-function calcGroup(impacts: Impact[], wMm: number, hMm: number): number {
-  let max = 0;
-  for (let i = 0; i < impacts.length; i++)
-    for (let j = i + 1; j < impacts.length; j++) {
-      const dx = (impacts[i].x - impacts[j].x) * wMm;
-      const dy = (impacts[i].y - impacts[j].y) * hMm;
-      max = Math.max(max, Math.sqrt(dx * dx + dy * dy));
-    }
-  return max;
-}
+import { calcGroup, toMoa, toMeters } from '../utils/calculations';
 
 function Row({ label, value }: { label: string; value: string }) {
   return (

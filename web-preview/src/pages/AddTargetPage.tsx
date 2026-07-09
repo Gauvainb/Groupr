@@ -327,6 +327,9 @@ export default function AddTargetPage() {
     const w = parseFloat(widthMm);
     const h = parseFloat(heightMm);
     if (!w || w <= 0 || !h || h <= 0) { alert('Dimensions invalides.'); return; }
+    if (w > 5000 || h > 5000) { alert('Dimensions de cible trop grandes (max 5000 mm).'); return; }
+    const ratio = w / h;
+    if (ratio < 0.2 || ratio > 5) { alert('Aspect ratio irréaliste. Cible entre 1:5 et 5:1.'); return; }
     const target = TargetStore.add({
       sessionId, imageData, widthMm: w, heightMm: h,
       impacts: [], label: targetLabel || undefined,
