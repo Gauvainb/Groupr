@@ -6,6 +6,10 @@ export interface SyntheticSpec {
   height: number;
   /** Paper gray level 0-255. Default 235. */
   paper?: number;
+  /** Scene background outside the paper. Default: paper fills the frame. */
+  scene?: { background: number; paperRect: { x: number; y: number; w: number; h: number } };
+  /** Filled dark discs (e.g. black bullseye zones). */
+  discs?: { x: number; y: number; r: number; shade?: number }[];
   /** Holes: filled dark circles. */
   holes?: { x: number; y: number; r: number; shade?: number }[];
   /** Thin ring outlines (scoring rings). */
@@ -31,7 +35,24 @@ function mulberry32(seed: number) {
 
 export function makeTarget(spec: SyntheticSpec): RawImage {
   const { width, height, paper = 235, noise = 0, seed = 42 } = spec;
-  const gray = new Float64Array(width * height).fill(paper);
+  const gray = new Float64Array(width * height).fill(
+    spec.scene ? spec.scene.background : paper
+  );
+  if (spec.scene) {
+    const { x, y, w, h } = spec.scene.paperRect;
+    for (let py = y; py < y + h; py++) {
+      for (let px = x; px < x + w; px++) {
+        if (px >= 0 && px < width && py >= 0 && py < height) gray[py * width + px] = paper;
+      }
+    }
+  }
+
+  for (const disc of spec.discs ?? []) {
+    const shade = disc.shade ?? 25;
+    forEachInBox(width, height, disc.x, disc.y, disc.r + 1, (px, py, idx) => {
+      if (Math.hypot(px - disc.x, py - disc.y) <= disc.r) gray[idx] = shade;
+    });
+  }
 
   for (const ring of spec.rings ?? []) {
     const t = ring.thickness ?? 2;

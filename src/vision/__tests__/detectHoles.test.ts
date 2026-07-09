@@ -324,6 +324,169 @@ test('robust to lighting gradient (shadow across target)', () => {
   assert.equal(falsePositives, 0, `false positives: ${falsePositives}`);
 });
 
+// ── Target region + polarity ────────────────────────────────────────────────
+
+test('ignores clutter outside the paper target', () => {
+  // paper occupies center; dark hole-sized clutter on the table around it
+  const holes = [
+    { x: 400, y: 350, r: 7 },
+    { x: 470, y: 420, r: 7 },
+  ];
+  const img = makeTarget({
+    width: 900,
+    height: 700,
+    scene: { background: 90, paperRect: { x: 250, y: 150, w: 400, h: 400 } },
+    holes: [
+      ...holes,
+      // hole-sized dark spots OUTSIDE the paper (bolts, debris, shadows)
+      { x: 100, y: 100, r: 7, shade: 20 },
+      { x: 800, y: 600, r: 7, shade: 20 },
+      { x: 120, y: 550, r: 8, shade: 20 },
+    ],
+    noise: 10,
+  });
+  const detected = detectHoles(img);
+  const { matched, falsePositives } = matchHoles(detected, holes);
+  assert.equal(matched, 2, `matched ${matched}/2`);
+  assert.equal(falsePositives, 0, `clutter leaked: ${falsePositives}`);
+});
+
+test('detects white holes on black bullseye', () => {
+  // black disc center, holes punched through show white paper
+  const whiteHoles = [
+    { x: 290, y: 300, r: 7, shade: 240 },
+    { x: 320, y: 280, r: 7, shade: 240 },
+  ];
+  const darkHoles = [{ x: 150, y: 150, r: 7 }];
+  const img = makeTarget({
+    width: 600,
+    height: 600,
+    discs: [{ x: 300, y: 300, r: 100, shade: 25 }],
+    holes: [...whiteHoles, ...darkHoles],
+    noise: 8,
+  });
+  const all = [...whiteHoles, ...darkHoles];
+  const { matched, falsePositives } = matchHoles(detectHoles(img), all);
+  assert.equal(matched, 3, `matched ${matched}/3`);
+  assert.equal(falsePositives, 0);
+});
+
+test('detects backlit holes (light through paper)', () => {
+  // light from behind: holes brighter than the paper
+  const holes = [
+    { x: 200, y: 220, r: 7, shade: 255 },
+    { x: 340, y: 300, r: 7, shade: 255 },
+    { x: 260, y: 380, r: 7, shade: 255 },
+  ];
+  const img = makeTarget({ width: 550, height: 550, paper: 190, holes, noise: 8 });
+  const { matched, falsePositives } = matchHoles(detectHoles(img), holes);
+  assert.equal(matched, 3, `matched ${matched}/3`);
+  assert.equal(falsePositives, 0);
+});
+
+test('bullseye disc itself is not a hole', () => {
+  const img = makeTarget({
+    width: 600,
+    height: 600,
+    discs: [{ x: 300, y: 300, r: 90, shade: 25 }],
+    noise: 8,
+  });
+  assert.equal(detectHoles(img).length, 0);
+});
+
+test('full scene: paper on dark background, bullseye, rings, mixed holes', () => {
+  const darkHoles = [
+    { x: 380, y: 250, r: 6 },
+    { x: 520, y: 300, r: 6 },
+  ];
+  const whiteHoles = [{ x: 450, y: 400, r: 6, shade: 245 }];
+  const img = makeTarget({
+    width: 900,
+    height: 800,
+    scene: { background: 70, paperRect: { x: 250, y: 120, w: 400, h: 550 } },
+    discs: [{ x: 450, y: 400, r: 80, shade: 25 }],
+    rings: [
+      { x: 450, y: 400, r: 130, thickness: 3 },
+      { x: 450, y: 400, r: 180, thickness: 3 },
+    ],
+    holes: [...darkHoles, ...whiteHoles, { x: 120, y: 700, r: 7, shade: 15 }],
+    noise: 10,
+    seed: 11,
+  });
+  const expected = [...darkHoles, ...whiteHoles];
+  const { matched, falsePositives } = matchHoles(detectHoles(img), expected, 4);
+  assert.equal(matched, 3, `matched ${matched}/3`);
+  assert.equal(falsePositives, 0, `false positives: ${falsePositives}`);
+});
+
+test('stress: 30 randomized scenes, ≥95% recall, ≤2% FP rate', () => {
+  let rngState = 1234;
+  const rand = () => {
+    rngState = (rngState * 48271) % 2147483647;
+    return rngState / 2147483647;
+  };
+
+  let totalExpected = 0;
+  let totalMatched = 0;
+  let totalFp = 0;
+  for (let scene = 0; scene < 30; scene++) {
+    const paperX = 150 + Math.floor(rand() * 100);
+    const paperY = 100 + Math.floor(rand() * 80);
+    const paperW = 400 + Math.floor(rand() * 150);
+    const paperH = 400 + Math.floor(rand() * 150);
+    const cx = paperX + paperW / 2;
+    const cy = paperY + paperH / 2;
+    const discR = 60 + rand() * 40;
+
+    const holes: { x: number; y: number; r: number; shade?: number }[] = [];
+    const n = 3 + Math.floor(rand() * 4);
+    for (let i = 0; i < n; i++) {
+      // scatter within inner half of paper, off the ring radii
+      let x = 0;
+      let y = 0;
+      let ok = false;
+      for (let tries = 0; tries < 50 && !ok; tries++) {
+        x = paperX + paperW * (0.25 + rand() * 0.5);
+        y = paperY + paperH * (0.25 + rand() * 0.5);
+        const dc = Math.hypot(x - cx, y - cy);
+        ok =
+          Math.abs(dc - (discR + 40)) > 15 && // off ring 1
+          Math.abs(dc - (discR + 80)) > 15 && // off ring 2
+          Math.abs(dc - discR) > 12 && // off bullseye edge
+          holes.every((h) => Math.hypot(h.x - x, h.y - y) > 30);
+      }
+      if (!ok) continue;
+      const inDisc = Math.hypot(x - cx, y - cy) < discR;
+      holes.push({ x, y, r: 5 + rand() * 4, shade: inDisc ? 240 : 30 });
+    }
+
+    const img = makeTarget({
+      width: 850,
+      height: 750,
+      scene: { background: 60 + rand() * 50, paperRect: { x: paperX, y: paperY, w: paperW, h: paperH } },
+      discs: [{ x: cx, y: cy, r: discR, shade: 25 }],
+      rings: [
+        { x: cx, y: cy, r: discR + 40, thickness: 3 },
+        { x: cx, y: cy, r: discR + 80, thickness: 3 },
+      ],
+      holes,
+      noise: 8 + rand() * 10,
+      seed: scene * 7 + 1,
+    });
+    const { matched, falsePositives } = matchHoles(detectHoles(img), holes, 5);
+    totalExpected += holes.length;
+    totalMatched += matched;
+    totalFp += falsePositives;
+  }
+
+  const recall = totalMatched / totalExpected;
+  assert.ok(recall >= 0.95, `recall ${(recall * 100).toFixed(1)}% (${totalMatched}/${totalExpected})`);
+  assert.ok(
+    totalFp <= Math.ceil(totalExpected * 0.02),
+    `false positives ${totalFp} on ${totalExpected} holes`
+  );
+});
+
 // ── Scale / realism ─────────────────────────────────────────────────────────
 
 test('realistic phone-photo scale: 1000px image, small holes, rings, noise', () => {
