@@ -9,7 +9,13 @@ import {
   Alert,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useRoute,
+  useNavigation,
+  RouteProp,
+} from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
@@ -24,8 +30,8 @@ function distanceInMeters(distance: number, unit: string): number {
 }
 
 function toMoa(sizeMm: number, distM: number): string {
-  // 1 MOA ≈ 29.08 mm at 100 m
-  const moa = sizeMm / (distM * 0.02908);
+  // 1 MOA ≈ 29.09 mm at 100 m
+  const moa = sizeMm / (distM * 0.29089);
   return moa.toFixed(2);
 }
 
@@ -60,6 +66,8 @@ function StatBadge({
 
 export default function SessionDetailScreen() {
   const db = useSQLiteContext();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<SessionsStackParamList>>();
   const { sessionId } = useRoute<Route>().params;
 
   const [session, setSession] = useState<SessionWithDetails | null>(null);
@@ -72,7 +80,11 @@ export default function SessionDetailScreen() {
     setSession(s);
   }, [db, sessionId]);
 
-  useFocusEffect(load);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const handleAddGroup = async () => {
     const size = parseFloat(newGroupSize);
@@ -216,8 +228,23 @@ export default function SessionDetailScreen() {
         </View>
       ))}
 
+      {/* Auto detection */}
+      <TouchableOpacity
+        style={styles.scanBtn}
+        onPress={() =>
+          navigation.navigate('ScanTarget', {
+            sessionId,
+            distanceM: distM,
+            caliber: session.equipment?.caliber,
+          })
+        }
+      >
+        <Ionicons name="scan-outline" size={20} color={COLORS.background} />
+        <Text style={styles.addBtnText}>Scan Target Photo</Text>
+      </TouchableOpacity>
+
       {/* Add group form */}
-      <Text style={styles.sectionTitle}>Add Group</Text>
+      <Text style={styles.sectionTitle}>Add Group Manually</Text>
       <View style={styles.card}>
         <Text style={styles.fieldLabel}>Size (mm) *</Text>
         <TextInput
@@ -353,4 +380,14 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
   },
   addBtnText: { color: COLORS.background, fontWeight: '700', fontSize: 16 },
+  scanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.secondary,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.md,
+    marginTop: SPACING.sm,
+  },
 });

@@ -11,6 +11,7 @@ import SessionDetailScreen from '../screens/SessionDetailScreen';
 import AnalysisScreen from '../screens/AnalysisScreen';
 import EquipmentScreen from '../screens/EquipmentScreen';
 import AddEquipmentScreen from '../screens/AddEquipmentScreen';
+import ScanTargetScreen from '../screens/ScanTargetScreen';
 
 export type RootTabParamList = {
   HomeTab: undefined;
@@ -23,6 +24,7 @@ export type SessionsStackParamList = {
   SessionsList: undefined;
   AddSession: { sessionId?: number };
   SessionDetail: { sessionId: number };
+  ScanTarget: { sessionId: number; distanceM: number; caliber?: string };
 };
 
 export type EquipmentStackParamList = {
@@ -57,6 +59,11 @@ function SessionsNavigator() {
         name="SessionDetail"
         component={SessionDetailScreen}
         options={{ title: 'Session Detail' }}
+      />
+      <SessionsStack.Screen
+        name="ScanTarget"
+        component={ScanTargetScreen}
+        options={{ title: 'Scan Target' }}
       />
     </SessionsStack.Navigator>
   );
