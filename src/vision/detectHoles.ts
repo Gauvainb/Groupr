@@ -315,6 +315,35 @@ export function findTargetRegion(gray: Uint8Array, width: number, height: number
   if (!solid(best)) best = pickLargest(t);
   if (!best || best.area < width * height * 0.05) return full;
 
+  // Anchor on the bullseye: largest solid dark disc, expanded to cover the
+  // ring card. Rescue for scenes brightness segmentation can't split (target
+  // flat on an equally bright table, hands in frame).
+  const bullseyeAnchor = (): Region | null => {
+    const dark = new Uint8Array(gray.length);
+    for (let i = 0; i < gray.length; i++) dark[i] = gray[i] <= t ? 1 : 0;
+    let disc: Blob | null = null;
+    for (const b of findBlobs(dark, width, height)) {
+      const bw = b.maxX - b.minX + 1;
+      const bh = b.maxY - b.minY + 1;
+      const areaFrac = b.area / (width * height);
+      const fill = b.area / (bw * bh);
+      const aspect = Math.max(bw, bh) / Math.min(bw, bh);
+      if (areaFrac < 0.01 || areaFrac > 0.3 || fill < 0.55 || aspect > 1.6) continue;
+      if (!disc || b.area > disc.area) disc = b;
+    }
+    if (!disc) return null;
+    const r = Math.sqrt(disc.area / Math.PI);
+    const cx = disc.sumX / disc.area;
+    const cy = disc.sumY / disc.area;
+    const reach = 2.7 * r;
+    return {
+      x0: Math.max(0, Math.round(cx - reach)),
+      y0: Math.max(0, Math.round(cy - reach)),
+      x1: Math.min(width - 1, Math.round(cx + reach)),
+      y1: Math.min(height - 1, Math.round(cy + reach)),
+    };
+  };
+
   // Bright region touching 3+ frame borders means the paper fills the frame
   // (or lighting split the scene, e.g. a hard shadow) — search everywhere.
   const borders =
@@ -322,7 +351,7 @@ export function findTargetRegion(gray: Uint8Array, width: number, height: number
     (best.minY === 0 ? 1 : 0) +
     (best.maxX === width - 1 ? 1 : 0) +
     (best.maxY === height - 1 ? 1 : 0);
-  if (borders >= 3) return full;
+  if (borders >= 3) return bullseyeAnchor() ?? full;
 
   // Trim edges with sparse bright coverage: a lit wall patch or ceiling band
   // bridged to the paper stretches the bbox; those rows/cols are mostly dark.
@@ -350,6 +379,13 @@ export function findTargetRegion(gray: Uint8Array, width: number, height: number
   while (x1 > x0 && colFrac(x1) < cutoff) x1--;
   while (y0 < y1 && rowFrac(y0) < cutoff) y0++;
   while (y1 > y0 && rowFrac(y1) < cutoff) y1--;
+
+  // Brightness segmentation collapsed to (nearly) the whole frame — try the
+  // bullseye anchor before accepting it.
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > width * height * 0.85) {
+    const anchored = bullseyeAnchor();
+    if (anchored) return anchored;
+  }
 
   // Inset: the paper's own edge transition (curl, shadow, backstop) is not
   // hole territory.
@@ -407,14 +443,19 @@ function cropGray(gray: Uint8Array, width: number, r: Region): Uint8Array {
 
 function blobsToHoles(
   blobs: Blob[],
-  regionArea: number,
+  rw: number,
+  rh: number,
   opts: Required<Omit<DetectOptions, never>>
 ): Hole[] {
+  const regionArea = rw * rh;
   const minArea = regionArea * opts.minAreaFrac;
   const maxArea = regionArea * opts.maxAreaFrac;
   const holes: Hole[] = [];
   for (const b of blobs) {
     if (b.area < minArea || b.area > maxArea) continue;
+    // Touching the region border: an object reaching in from outside the
+    // target (finger, clip, wire), not a hole.
+    if (b.minX <= 1 || b.minY <= 1 || b.maxX >= rw - 2 || b.maxY >= rh - 2) continue;
 
     const w = b.maxX - b.minX + 1;
     const h = b.maxY - b.minY + 1;
@@ -474,18 +515,51 @@ export function detectHoles(img: RawImage, opts: DetectOptions = {}): Hole[] {
   const crop = cropGray(gray, img.width, region);
   const regionArea = rw * rh;
 
-  // Dark holes on light paper; bright holes: white paper behind a black
-  // bullseye zone, or backlight shining through the hole.
-  const darkMask = adaptiveBinarize(crop, rw, rh, 40, 'dark');
-  const brightMask = adaptiveBinarize(crop, rw, rh, 40, 'bright');
+  // Three passes:
+  // 1. dark holes on light paper — strict shape rules, because printed
+  //    digits/text/grid marks are dark too and clean punches are circular;
+  // 2. bright holes, strict — backlit paper, clean white-on-black punches;
+  // 3. bright holes, loose — dim torn holes on the black bullseye. Ragged
+  //    and low-contrast, so shape rules are relaxed; in exchange each
+  //    candidate must be surrounded by dark (it must sit ON the bullseye),
+  //    which kills the halo artifacts adaptive thresholding paints on paper
+  //    around dark zones.
+  const loose = { ...resolved, minCircularity: 0.5, maxAspect: 2.6, minFill: 0.45 };
+  const passes = [
+    { mask: adaptiveBinarize(crop, rw, rh, 40, 'dark'), opts: resolved, darkAnnulus: false },
+    { mask: adaptiveBinarize(crop, rw, rh, 40, 'bright'), opts: resolved, darkAnnulus: false },
+    { mask: adaptiveBinarize(crop, rw, rh, 26, 'bright'), opts: loose, darkAnnulus: true },
+  ];
+
+  const cropOtsu = otsuThreshold(crop);
+  const annulusIsDark = (h: Hole): boolean => {
+    const rr = Math.max(h.radiusPx * 2.2, 8);
+    let dark = 0;
+    let n = 0;
+    for (let a = 0; a < 24; a++) {
+      const x = Math.round(h.x + rr * Math.cos((a * Math.PI) / 12));
+      const y = Math.round(h.y + rr * Math.sin((a * Math.PI) / 12));
+      if (x < 0 || x >= rw || y < 0 || y >= rh) continue;
+      n++;
+      if (crop[y * rw + x] <= cropOtsu) dark++;
+    }
+    return n > 0 && dark / n >= 0.55;
+  };
 
   const holes: Hole[] = [];
-  for (const mask of [darkMask, brightMask]) {
-    holes.push(...blobsToHoles(findBlobs(mask, rw, rh), regionArea, resolved));
-    // Second pass with morphological opening: breaks the thin bridge when a
-    // hole touches a scoring ring, so the hole separates from the ring blob.
-    const opened = dilate(erode(mask, rw, rh, 3), rw, rh, 3);
-    holes.push(...blobsToHoles(findBlobs(opened, rw, rh), regionArea, resolved));
+  for (const { mask, opts: passOpts, darkAnnulus } of passes) {
+    const found = [
+      ...blobsToHoles(findBlobs(mask, rw, rh), rw, rh, passOpts),
+      // Morphological opening breaks the thin bridge when a hole touches a
+      // scoring ring, separating the hole from the ring blob.
+      ...blobsToHoles(
+        findBlobs(dilate(erode(mask, rw, rh, 3), rw, rh, 3), rw, rh),
+        rw,
+        rh,
+        passOpts
+      ),
+    ];
+    holes.push(...(darkAnnulus ? found.filter(annulusIsDark) : found));
   }
   const deduped = dedupeHoles(holes);
   for (const h of deduped) {

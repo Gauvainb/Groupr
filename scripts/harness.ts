@@ -32,7 +32,7 @@ function drawRect(img: RawImage, x0:number,y0:number,x1:number,y1:number, rgb:[n
   for (let y=y0;y<=y1;y++) for (const x of [x0,x1]) { const i=(y*img.width+x)*4; img.data[i]=rgb[0];img.data[i+1]=rgb[1];img.data[i+2]=rgb[2]; }
 }
 
-const buf = fs.readFileSync('/Users/g.bourgeois/Downloads/cible.jpg');
+const buf = fs.readFileSync(process.argv[2]);
 const full = jpeg.decode(buf, { useTArray: true });
 const img = resize({ width: full.width, height: full.height, data: full.data }, 1000);
 console.log(`image ${img.width}x${img.height}`);
@@ -48,5 +48,5 @@ for (const h of holes) console.log(`  (${h.x.toFixed(0)}, ${h.y.toFixed(0)}) r=$
 
 drawRect(img, region.x0, region.y0, region.x1, region.y1, [0,128,255]);
 for (const h of holes) drawCircle(img, h.x, h.y, Math.max(h.radiusPx*1.8, 9), [255,0,0]);
-fs.writeFileSync('/private/tmp/claude-502/-Users-g-bourgeois-Groupr/2b4a3f6a-a65b-4b19-935f-494f5e0a9bc8/scratchpad/annotated.jpg', jpeg.encode({width:img.width,height:img.height,data:Buffer.from(img.data.buffer)}, 85).data);
+fs.writeFileSync('/private/tmp/claude-502/-Users-g-bourgeois-Groupr/2b4a3f6a-a65b-4b19-935f-494f5e0a9bc8/scratchpad/' + (process.argv[3] ?? 'annotated.jpg'), jpeg.encode({width:img.width,height:img.height,data:Buffer.from(img.data.buffer)}, 85).data);
 console.log('annotated written');

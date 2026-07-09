@@ -57,3 +57,68 @@ test('real photo: bullseye cluster dense', () => {
   );
   assert.ok(inCluster.length >= 12, `cluster=${inCluster.length}`);
 });
+
+// ── cible2: outdoor, flat on sunlit table, hands and beer glass in frame ────
+
+const img2 = jpeg.decode(
+  fs.readFileSync(path.join(__dirname, 'fixtures', 'cible2-outdoor.jpg')),
+  { useTArray: true }
+);
+const holes2 = detectHoles(img2);
+const f2x = (h: { x: number }) => h.x / img2.width;
+const f2y = (h: { y: number }) => h.y / img2.height;
+
+test('outdoor photo: bullseye holes found', () => {
+  // shot cluster sits in the black disc (x 0.37–0.70, y 0.38–0.65)
+  const inDisc = holes2.filter(
+    (h) => f2x(h) > 0.37 && f2x(h) < 0.7 && f2y(h) > 0.38 && f2y(h) < 0.65
+  );
+  assert.ok(inDisc.length >= 5, `disc=${inDisc.length}`);
+});
+
+test('outdoor photo: hands, glass, clothing not detected', () => {
+  // table/glass above the paper, hands at frame edges, legs below
+  const bad = holes2.filter(
+    (h) => f2y(h) < 0.17 || f2y(h) > 0.88 || f2x(h) > 0.95
+  );
+  assert.equal(bad.length, 0, JSON.stringify(bad.map((h) => [h.x, h.y])));
+});
+
+test('outdoor photo: bounded false positives', () => {
+  assert.ok(holes2.length <= 16, `count=${holes2.length}`);
+});
+
+// ── cible3: hung target, ragged tan holes on black and white ────────────────
+
+const img3 = jpeg.decode(
+  fs.readFileSync(path.join(__dirname, 'fixtures', 'cible3-torn.jpg')),
+  { useTArray: true }
+);
+const holes3 = detectHoles(img3);
+const f3x = (h: { x: number }) => h.x / img3.width;
+const f3y = (h: { y: number }) => h.y / img3.height;
+
+test('torn-holes photo: holes found on the black disc', () => {
+  const inDisc = holes3.filter(
+    (h) => f3x(h) > 0.34 && f3x(h) < 0.66 && f3y(h) > 0.39 && f3y(h) < 0.65
+  );
+  assert.ok(inDisc.length >= 7, `disc=${inDisc.length}`);
+});
+
+test('torn-holes photo: dark holes on white paper found', () => {
+  const known = [
+    { x: 0.457, y: 0.338 }, // upper hole near "5" ring
+    { x: 0.641, y: 0.347 }, // upper-right hole
+  ];
+  for (const k of known) {
+    const hit = holes3.some((h) => Math.hypot(f3x(h) - k.x, f3y(h) - k.y) < 0.02);
+    assert.ok(hit, `missing known hole near (${k.x}, ${k.y})`);
+  }
+});
+
+test('torn-holes photo: nothing outside the paper', () => {
+  const outside = holes3.filter(
+    (h) => f3x(h) < 0.08 || f3x(h) > 0.95 || f3y(h) < 0.2 || f3y(h) > 0.85
+  );
+  assert.equal(outside.length, 0, JSON.stringify(outside.map((h) => [h.x, h.y])));
+});
