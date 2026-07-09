@@ -28,6 +28,9 @@ export interface DetectOptions {
   minCircularity?: number;
   /** Min blob fill of its bounding box (circle ≈ 0.785). Default 0.5. */
   minFill?: number;
+  /** Max blob fill of its bounding box — squares fill ≈1.0, circles ≈0.785.
+   * Rejects printed grid cells and square marks. Default 0.93. */
+  maxFill?: number;
   /** Max bounding-box aspect ratio. Default 2. */
   maxAspect?: number;
 }
@@ -258,14 +261,58 @@ export function findBlobs(mask: Uint8Array, width: number, height: number): Blob
  */
 export function findTargetRegion(gray: Uint8Array, width: number, height: number): Region {
   const t = otsuThreshold(gray);
-  const bright = new Uint8Array(gray.length);
-  for (let i = 0; i < gray.length; i++) bright[i] = gray[i] > t ? 1 : 0;
 
-  const blobs = findBlobs(bright, width, height);
-  let best: Blob | null = null;
-  for (const b of blobs) if (!best || b.area > best.area) best = b;
+  // Second-stage Otsu among bright pixels only: separates paper from other
+  // bright surfaces (concrete walls, ceiling) that pass the first cut.
+  const hist = new Array(256).fill(0);
+  let brightCount = 0;
+  for (let i = 0; i < gray.length; i++) {
+    if (gray[i] > t) {
+      hist[gray[i]]++;
+      brightCount++;
+    }
+  }
+  let t2 = t;
+  let sumAll = 0;
+  for (let v = 0; v < 256; v++) sumAll += v * hist[v];
+  let sumB = 0;
+  let wB = 0;
+  let bestVar = 0;
+  for (let v = 0; v < 256; v++) {
+    wB += hist[v];
+    if (wB === 0) continue;
+    const wF = brightCount - wB;
+    if (wF === 0) break;
+    sumB += v * hist[v];
+    const mB = sumB / wB;
+    const mF = (sumAll - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > bestVar) {
+      bestVar = between;
+      t2 = v;
+    }
+  }
+
+  let mask = new Uint8Array(gray.length);
+  const pickLargest = (threshold: number): Blob | null => {
+    mask = new Uint8Array(gray.length);
+    for (let i = 0; i < gray.length; i++) mask[i] = gray[i] > threshold ? 1 : 0;
+    let largest: Blob | null = null;
+    for (const b of findBlobs(mask, width, height)) {
+      if (!largest || b.area > largest.area) largest = b;
+    }
+    return largest;
+  };
 
   const full = { x0: 0, y0: 0, x1: width - 1, y1: height - 1 };
+  // Prefer the stricter cut, but only when it yields a solid region — paper
+  // is solid; a noise-split of uniform paper gives a wispy sprawl instead.
+  const solid = (b: Blob | null) =>
+    b !== null &&
+    b.area >= width * height * 0.05 &&
+    b.area / ((b.maxX - b.minX + 1) * (b.maxY - b.minY + 1)) >= 0.5;
+  let best = pickLargest(t2);
+  if (!solid(best)) best = pickLargest(t);
   if (!best || best.area < width * height * 0.05) return full;
 
   // Bright region touching 3+ frame borders means the paper fills the frame
@@ -277,7 +324,38 @@ export function findTargetRegion(gray: Uint8Array, width: number, height: number
     (best.maxY === height - 1 ? 1 : 0);
   if (borders >= 3) return full;
 
-  return { x0: best.minX, y0: best.minY, x1: best.maxX, y1: best.maxY };
+  // Trim edges with sparse bright coverage: a lit wall patch or ceiling band
+  // bridged to the paper stretches the bbox; those rows/cols are mostly dark.
+  // Trim against the stage-1 mask — tolerant of shadow gradients on the paper.
+  mask = new Uint8Array(gray.length);
+  for (let i = 0; i < gray.length; i++) mask[i] = gray[i] > t ? 1 : 0;
+  let { minX: x0, maxX: x1, minY: y0, maxY: y1 } = best;
+  const colFrac = (x: number) => {
+    let n = 0;
+    for (let y = y0; y <= y1; y++) n += mask[y * width + x];
+    return n / (y1 - y0 + 1);
+  };
+  const rowFrac = (y: number) => {
+    let n = 0;
+    for (let x = x0; x <= x1; x++) n += mask[y * width + x];
+    return n / (x1 - x0 + 1);
+  };
+  // Cutoff relative to typical paper coverage: robust to shadow gradients.
+  const colSamples: number[] = [];
+  for (let x = x0; x <= x1; x += Math.max(1, ((x1 - x0) / 40) | 0)) colSamples.push(colFrac(x));
+  colSamples.sort((a, b) => a - b);
+  const cutoff = Math.min(0.75 * colSamples[colSamples.length >> 1], 0.9);
+
+  while (x0 < x1 && colFrac(x0) < cutoff) x0++;
+  while (x1 > x0 && colFrac(x1) < cutoff) x1--;
+  while (y0 < y1 && rowFrac(y0) < cutoff) y0++;
+  while (y1 > y0 && rowFrac(y1) < cutoff) y1--;
+
+  // Inset: the paper's own edge transition (curl, shadow, backstop) is not
+  // hole territory.
+  const insetX = Math.round((x1 - x0) * 0.025);
+  const insetY = Math.round((y1 - y0) * 0.025);
+  return { x0: x0 + insetX, y0: y0 + insetY, x1: x1 - insetX, y1: y1 - insetY };
 }
 
 /** Binary erosion with a (2k+1)² square kernel. */
@@ -317,13 +395,14 @@ export function dilate(mask: Uint8Array, width: number, height: number, k: numbe
   return out;
 }
 
-function zeroOutsideRegion(mask: Uint8Array, width: number, height: number, r: Region): void {
-  for (let y = 0; y < height; y++) {
-    const inRow = y >= r.y0 && y <= r.y1;
-    for (let x = 0; x < width; x++) {
-      if (!inRow || x < r.x0 || x > r.x1) mask[y * width + x] = 0;
-    }
+function cropGray(gray: Uint8Array, width: number, r: Region): Uint8Array {
+  const rw = r.x1 - r.x0 + 1;
+  const rh = r.y1 - r.y0 + 1;
+  const out = new Uint8Array(rw * rh);
+  for (let y = 0; y < rh; y++) {
+    out.set(gray.subarray((r.y0 + y) * width + r.x0, (r.y0 + y) * width + r.x0 + rw), y * rw);
   }
+  return out;
 }
 
 function blobsToHoles(
@@ -343,7 +422,7 @@ function blobsToHoles(
     if (aspect > opts.maxAspect) continue;
 
     const fill = b.area / (w * h);
-    if (fill < opts.minFill) continue;
+    if (fill < opts.minFill || fill > opts.maxFill) continue;
 
     // Perimeter from boundary-pixel count underestimates true contour length;
     // 0.95 correction keeps circles near 1.0 without letting rings through.
@@ -379,29 +458,39 @@ export function detectHoles(img: RawImage, opts: DetectOptions = {}): Hole[] {
   const resolved = {
     minAreaFrac: opts.minAreaFrac ?? 0.0001,
     maxAreaFrac: opts.maxAreaFrac ?? 0.004,
-    minCircularity: opts.minCircularity ?? 0.55,
+    minCircularity: opts.minCircularity ?? 0.68,
     minFill: opts.minFill ?? 0.5,
+    maxFill: opts.maxFill ?? 0.93,
     maxAspect: opts.maxAspect ?? 2,
   };
 
   const gray = boxBlur(toGrayscale(img), img.width, img.height);
   const region = findTargetRegion(gray, img.width, img.height);
-  const regionArea = (region.x1 - region.x0 + 1) * (region.y1 - region.y0 + 1);
 
-  // Dark holes on light paper.
-  const darkMask = adaptiveBinarize(gray, img.width, img.height, 40, 'dark');
-  zeroOutsideRegion(darkMask, img.width, img.height, region);
-  // Bright holes: white paper behind a black zone, or backlight through the hole.
-  const brightMask = adaptiveBinarize(gray, img.width, img.height, 40, 'bright');
-  zeroOutsideRegion(brightMask, img.width, img.height, region);
+  // Work on the cropped target only: adaptive windows never see the scene
+  // outside the paper, so its edges and background can't skew local means.
+  const rw = region.x1 - region.x0 + 1;
+  const rh = region.y1 - region.y0 + 1;
+  const crop = cropGray(gray, img.width, region);
+  const regionArea = rw * rh;
+
+  // Dark holes on light paper; bright holes: white paper behind a black
+  // bullseye zone, or backlight shining through the hole.
+  const darkMask = adaptiveBinarize(crop, rw, rh, 40, 'dark');
+  const brightMask = adaptiveBinarize(crop, rw, rh, 40, 'bright');
 
   const holes: Hole[] = [];
   for (const mask of [darkMask, brightMask]) {
-    holes.push(...blobsToHoles(findBlobs(mask, img.width, img.height), regionArea, resolved));
+    holes.push(...blobsToHoles(findBlobs(mask, rw, rh), regionArea, resolved));
     // Second pass with morphological opening: breaks the thin bridge when a
     // hole touches a scoring ring, so the hole separates from the ring blob.
-    const opened = dilate(erode(mask, img.width, img.height, 3), img.width, img.height, 3);
-    holes.push(...blobsToHoles(findBlobs(opened, img.width, img.height), regionArea, resolved));
+    const opened = dilate(erode(mask, rw, rh, 3), rw, rh, 3);
+    holes.push(...blobsToHoles(findBlobs(opened, rw, rh), regionArea, resolved));
   }
-  return dedupeHoles(holes);
+  const deduped = dedupeHoles(holes);
+  for (const h of deduped) {
+    h.x += region.x0;
+    h.y += region.y0;
+  }
+  return deduped;
 }
