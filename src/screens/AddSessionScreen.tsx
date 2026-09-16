@@ -58,8 +58,13 @@ export default function AddSessionScreen() {
       Alert.alert('Validation', 'Enter a valid shot count.');
       return;
     }
+
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+
     const sessionId = await addSession(db, {
-      date: date.toISOString().split('T')[0],
+      date: `${y}-${m}-${d}`,
       discipline,
       distance: dist,
       distanceUnit,

@@ -19,6 +19,38 @@ import { EquipmentStackParamList } from '../navigation/AppNavigator';
 
 type Nav = NativeStackNavigationProp<EquipmentStackParamList>;
 
+const EquipmentItem = React.memo(({ item, onDelete }: { item: Equipment; onDelete: (id: number, name: string) => void }) => (
+  <View style={styles.item}>
+    <View style={styles.itemIcon}>
+      <Ionicons
+        name="shield-checkmark-outline"
+        size={22}
+        color={COLORS.primary}
+      />
+    </View>
+    <View style={styles.itemInfo}>
+      <Text style={styles.itemName}>{item.name}</Text>
+      <Text style={styles.itemMeta}>
+        {item.type}  ·  {item.caliber}
+      </Text>
+      {item.optic ? (
+        <Text style={styles.itemSub}>Optic: {item.optic}</Text>
+      ) : null}
+      {item.notes ? (
+        <Text style={styles.itemNotes} numberOfLines={1}>
+          {item.notes}
+        </Text>
+      ) : null}
+    </View>
+    <TouchableOpacity
+      onPress={() => onDelete(item.id, item.name)}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+    >
+      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+    </TouchableOpacity>
+  </View>
+));
+
 export default function EquipmentScreen() {
   const db = useSQLiteContext();
   const nav = useNavigation<Nav>();
@@ -62,35 +94,7 @@ export default function EquipmentScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.item}>
-            <View style={styles.itemIcon}>
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={22}
-                color={COLORS.primary}
-              />
-            </View>
-            <View style={styles.itemInfo}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemMeta}>
-                {item.type}  ·  {item.caliber}
-              </Text>
-              {item.optic ? (
-                <Text style={styles.itemSub}>Optic: {item.optic}</Text>
-              ) : null}
-              {item.notes ? (
-                <Text style={styles.itemNotes} numberOfLines={1}>
-                  {item.notes}
-                </Text>
-              ) : null}
-            </View>
-            <TouchableOpacity
-              onPress={() => handleDelete(item.id, item.name)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
-            </TouchableOpacity>
-          </View>
+          <EquipmentItem item={item} onDelete={handleDelete} />
         )}
       />
       <TouchableOpacity

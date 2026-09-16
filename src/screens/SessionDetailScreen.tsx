@@ -72,7 +72,11 @@ export default function SessionDetailScreen() {
     setSession(s);
   }, [db, sessionId]);
 
-  useFocusEffect(load);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const handleAddGroup = async () => {
     const size = parseFloat(newGroupSize);
@@ -122,13 +126,16 @@ export default function SessionDetailScreen() {
       ? Math.min(...session.groups.map((g) => g.sizeMm))
       : null;
 
+  const [y, m, d] = session.date.split('-');
+  const localDate = new Date(Number(y), Number(m) - 1, Number(d));
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Session info */}
       <View style={styles.card}>
         <Row
           label="Date"
-          value={new Date(session.date).toLocaleDateString(undefined, {
+          value={localDate.toLocaleDateString(undefined, {
             weekday: 'long',
             day: 'numeric',
             month: 'long',

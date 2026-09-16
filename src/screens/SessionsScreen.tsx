@@ -19,13 +19,45 @@ import { SessionsStackParamList } from '../navigation/AppNavigator';
 
 type Nav = NativeStackNavigationProp<SessionsStackParamList>;
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
+function formatDate(dateStr: string) {
+  const [y, m, d] = dateStr.split('-');
+  return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString(undefined, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
 }
+
+const SessionItem = React.memo(({ item, onPress, onDelete }: { item: Session; onPress: (id: number) => void; onDelete: (id: number) => void }) => (
+  <TouchableOpacity
+    style={styles.item}
+    activeOpacity={0.7}
+    onPress={() => onPress(item.id)}
+  >
+    <View style={styles.itemAccent} />
+    <View style={styles.itemBody}>
+      <View style={styles.itemHeader}>
+        <Text style={styles.itemDate}>{formatDate(item.date)}</Text>
+        {item.score != null && item.maxScore != null && item.maxScore > 0 && (
+          <Text style={styles.itemScore}>
+            {((item.score / item.maxScore) * 100).toFixed(1)}%
+          </Text>
+        )}
+      </View>
+      <Text style={styles.itemDiscipline}>{item.discipline}</Text>
+      <Text style={styles.itemMeta}>
+        {item.distance} {item.distanceUnit} · {item.shots} shots
+      </Text>
+    </View>
+    <TouchableOpacity
+      onPress={() => onDelete(item.id)}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      style={styles.deleteBtn}
+    >
+      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+    </TouchableOpacity>
+  </TouchableOpacity>
+));
 
 export default function SessionsScreen() {
   const db = useSQLiteContext();
@@ -66,34 +98,11 @@ export default function SessionsScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.item}
-            activeOpacity={0.7}
-            onPress={() => nav.navigate('SessionDetail', { sessionId: item.id })}
-          >
-            <View style={styles.itemAccent} />
-            <View style={styles.itemBody}>
-              <View style={styles.itemHeader}>
-                <Text style={styles.itemDate}>{formatDate(item.date)}</Text>
-                {item.score != null && item.maxScore != null && item.maxScore > 0 && (
-                  <Text style={styles.itemScore}>
-                    {((item.score / item.maxScore) * 100).toFixed(1)}%
-                  </Text>
-                )}
-              </View>
-              <Text style={styles.itemDiscipline}>{item.discipline}</Text>
-              <Text style={styles.itemMeta}>
-                {item.distance} {item.distanceUnit} · {item.shots} shots
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => handleDelete(item.id)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={styles.deleteBtn}
-            >
-              <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
-            </TouchableOpacity>
-          </TouchableOpacity>
+          <SessionItem
+            item={item}
+            onPress={(id) => nav.navigate('SessionDetail', { sessionId: id })}
+            onDelete={handleDelete}
+          />
         )}
       />
       <TouchableOpacity style={styles.fab} onPress={() => nav.navigate('AddSession', {})}>
