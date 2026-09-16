@@ -40,6 +40,9 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       label TEXT,
       FOREIGN KEY (sessionId) REFERENCES sessions(id) ON DELETE CASCADE
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(date);
+    CREATE INDEX IF NOT EXISTS idx_groups_sessionId ON groups_data(sessionId);
   `);
 }
 
@@ -84,17 +87,18 @@ export async function getSessionWithDetails(
   );
   if (!session) return null;
 
-  const equipment = session.equipmentId
-    ? (await db.getFirstAsync<Equipment>(
-        'SELECT * FROM equipment WHERE id = ?',
-        [session.equipmentId]
-      )) ?? undefined
-    : undefined;
-
-  const groups = await db.getAllAsync<Group>(
-    'SELECT * FROM groups_data WHERE sessionId = ? ORDER BY id ASC',
-    [id]
-  );
+  const [equipment, groups] = await Promise.all([
+    session.equipmentId
+      ? db.getFirstAsync<Equipment>(
+          'SELECT * FROM equipment WHERE id = ?',
+          [session.equipmentId]
+        ).then((res) => res ?? undefined)
+      : Promise.resolve(undefined),
+    db.getAllAsync<Group>(
+      'SELECT * FROM groups_data WHERE sessionId = ? ORDER BY id ASC',
+      [id]
+    ),
+  ]);
 
   return { ...session, equipment, groups };
 }
@@ -150,27 +154,18 @@ export async function deleteGroup(db: SQLiteDatabase, id: number): Promise<void>
 // ─── Stats & Charts ───────────────────────────────────────────────────────────
 
 export async function getStats(db: SQLiteDatabase) {
-  const totalRow = await db.getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM sessions'
-  );
-  const bestGroupRow = await db.getFirstAsync<{ sizeMm: number }>(
-    'SELECT MIN(sizeMm) as sizeMm FROM groups_data'
-  );
-  const avgGroupRow = await db.getFirstAsync<{ avg: number }>(
-    'SELECT AVG(sizeMm) as avg FROM groups_data'
-  );
-  const scoreRows = await db.getAllAsync<{ score: number; maxScore: number }>(
-    'SELECT score, maxScore FROM sessions WHERE score IS NOT NULL AND maxScore IS NOT NULL AND maxScore > 0'
-  );
-
-  const bestScorePct =
-    scoreRows.length > 0
-      ? Math.max(...scoreRows.map((r) => (r.score / r.maxScore) * 100))
-      : null;
+  const [totalRow, bestGroupRow, avgGroupRow, bestScoreRow] = await Promise.all([
+    db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM sessions'),
+    db.getFirstAsync<{ sizeMm: number }>('SELECT MIN(sizeMm) as sizeMm FROM groups_data'),
+    db.getFirstAsync<{ avg: number }>('SELECT AVG(sizeMm) as avg FROM groups_data'),
+    db.getFirstAsync<{ bestScorePct: number }>(
+      'SELECT MAX((score * 100.0) / maxScore) as bestScorePct FROM sessions WHERE score IS NOT NULL AND maxScore IS NOT NULL AND maxScore > 0'
+    ),
+  ]);
 
   return {
     totalSessions: totalRow?.count ?? 0,
-    bestScorePct,
+    bestScorePct: bestScoreRow?.bestScorePct ?? null,
     bestGroupMm: bestGroupRow?.sizeMm ?? null,
     avgGroupMm: avgGroupRow?.avg ?? null,
   };
@@ -181,13 +176,25 @@ export async function getSessionsForChart(db: SQLiteDatabase, limit = 20) {
     'SELECT * FROM sessions ORDER BY date ASC, createdAt ASC LIMIT ?',
     [limit]
   );
-  const result: { session: Session; groups: Group[] }[] = [];
-  for (const s of sessions) {
-    const groups = await db.getAllAsync<Group>(
-      'SELECT * FROM groups_data WHERE sessionId = ?',
-      [s.id]
-    );
-    result.push({ session: s, groups });
-  }
-  return result;
+
+  if (sessions.length === 0) return [];
+
+  const sessionIds = sessions.map((s) => s.id);
+  const placeholders = sessionIds.map(() => '?').join(',');
+
+  const allGroups = await db.getAllAsync<Group>(
+    `SELECT * FROM groups_data WHERE sessionId IN (${placeholders})`,
+    sessionIds
+  );
+
+  const groupsBySessionId = allGroups.reduce((acc, group) => {
+    if (!acc[group.sessionId]) acc[group.sessionId] = [];
+    acc[group.sessionId].push(group);
+    return acc;
+  }, {} as Record<number, Group[]>);
+
+  return sessions.map((session) => ({
+    session,
+    groups: groupsBySessionId[session.id] || [],
+  }));
 }

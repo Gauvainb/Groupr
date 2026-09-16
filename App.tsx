@@ -1,6 +1,6 @@
 import React from 'react';
 import { SQLiteProvider } from 'expo-sqlite';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -9,8 +9,10 @@ import { initDatabase } from './src/db/database';
 import { COLORS } from './src/constants/theme';
 
 const NAV_THEME = {
+  ...DefaultTheme,
   dark: true,
   colors: {
+    ...DefaultTheme.colors,
     primary: COLORS.primary,
     background: COLORS.background,
     card: COLORS.card,
